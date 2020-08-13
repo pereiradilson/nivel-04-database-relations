@@ -36,7 +36,11 @@ class CreateOrderService {
     );
 
     if (!checkCustomerExists) {
-      throw new AppError('Customer does not exist');
+      throw new AppError('Customer does not exist.');
+    }
+
+    if (products.length === 0) {
+      throw new AppError('No products found.');
     }
 
     const checkProductsExists = await this.productsRepository.findAllById(
@@ -44,12 +48,25 @@ class CreateOrderService {
     );
 
     if (checkProductsExists.length !== products.length) {
-      throw new AppError('Products do not exist');
+      throw new AppError('Products do not exist.');
     }
 
-    const orderProducts = checkProductsExists.map(product => ({
+    const checkProductsQuantity = products.filter(
+      product =>
+        checkProductsExists.filter(
+          productItem => productItem.id === product.id,
+        )[0].quantity < product.quantity,
+    );
+
+    if (checkProductsQuantity.length) {
+      throw new AppError('Product out of stock.');
+    }
+
+    const orderProducts = products.map(product => ({
       product_id: product.id,
-      price: product.price,
+      price: checkProductsExists.filter(
+        productItem => productItem.id === product.id,
+      )[0].price,
       quantity: product.quantity,
     }));
 
@@ -57,6 +74,18 @@ class CreateOrderService {
       customer: checkCustomerExists,
       products: orderProducts,
     });
+
+    const { order_products } = order;
+
+    const updateQuantityProducts = order_products.map(product => ({
+      id: product.product_id,
+      quantity:
+        checkProductsExists.filter(
+          productItem => productItem.id === product.product_id,
+        )[0].quantity - product.quantity,
+    }));
+
+    await this.productsRepository.updateQuantity(updateQuantityProducts);
 
     return order;
   }
